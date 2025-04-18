@@ -1,1 +1,4 @@
 dataset/
+models/
+.ipynb_checkpoints/
+.ipynb_checkpoints/BaseLineCNNClassifier-checkpoint.ipynb
