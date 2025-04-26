@@ -22,18 +22,28 @@ import statistics
 import argparse
 
 import sys
-# Custom Dataset class
+
+# Custom Dataset class for handling toxicity data
 class ToxicityDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=77):
+        """
+        Initialize the dataset with texts, labels, tokenizer, and max_length.
+        """
         self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer
         self.max_length = max_length
 
     def __len__(self):
+        """
+        Return the number of samples in the dataset.
+        """
         return len(self.texts)
 
     def __getitem__(self, idx):
+        """
+        Get a sample from the dataset at the specified index.
+        """
         text = self.texts[idx]
         label = self.labels[idx]
         encoding = self.tokenizer(text, padding="max_length", truncation=True, max_length=self.max_length, return_tensors="pt")
@@ -41,9 +51,13 @@ class ToxicityDataset(Dataset):
             "input_ids": encoding["input_ids"].squeeze(0),
             "label": torch.tensor(label, dtype=torch.float)
         }
+
 # TextCNN model with debug option
 class TextCNN(nn.Module):
     def __init__(self, vocab_size=50000, embed_dim=512, num_filters=2048, filter_sizes=[2, 3, 4, 5], output_dim=1, dropout=0.5):
+        """
+        Initialize the TextCNN model with the specified parameters.
+        """
         super(TextCNN, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.convs = nn.ModuleList([
@@ -55,6 +69,9 @@ class TextCNN(nn.Module):
         self.num_filters = num_filters  # Store for pruning reference
 
     def forward(self, text, debug=False):
+        """
+        Forward pass of the TextCNN model.
+        """
         embedded = self.embedding(text).unsqueeze(1)  # [batch_size, 1, seq_len, embed_dim]
         if debug:
             print(f"Embedded shape: {embedded.shape}")
@@ -75,13 +92,23 @@ class TextCNN(nn.Module):
 
 # Function to count trainable parameters
 def count_params(model):
+    """
+    Count the number of trainable parameters in the model.
+    """
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 # Function to compute FLOPs (simplified)
 def compute_flops(model, input_tensor):
+    """
+    Compute the number of floating point operations (FLOPs) for the model.
+    """
     return count_params(model) * 2  # Rough estimate
+
 # Evaluation function
 def evaluate_model(model, data_loader, criterion, device, plot_dir, log_file, pt):
+    """
+    Evaluate the model on the given data loader and compute metrics.
+    """
     model.eval()
     total_loss = 0
     all_preds = []
@@ -117,9 +144,11 @@ def evaluate_model(model, data_loader, criterion, device, plot_dir, log_file, pt
     
     return metrics
 
-
 # Structured pruning function (fixed)
 def structured_prune_model(model, amount):
+    """
+    Apply structured pruning to the model by removing a specified amount of filters.
+    """
     pruned_model = copy.deepcopy(model)
     original_num_filters = model.num_filters  # Use model’s num_filters
     new_num_filters = int(original_num_filters * (1 - amount))  # E.g., 1433 for 30% pruning
@@ -162,12 +191,11 @@ def structured_prune_model(model, amount):
     
     return pruned_model
 
-
-
-
-
 # Fine-tuning function
 def fine_tune(model, train_loader, val_loader, epochs, optimizer, criterion, scheduler, device):
+    """
+    Fine-tune the model on the training data and validate on the validation data.
+    """
     for epoch in range(epochs):
         model.train()
         total_loss = 0
@@ -189,20 +217,21 @@ def fine_tune(model, train_loader, val_loader, epochs, optimizer, criterion, sch
             loop.set_postfix(loss=total_loss / (total / train_loader.batch_size), accuracy=correct / total)
         scheduler.step()
 
-
-
 # Function to get subset loader
 def get_subset_loader(dataset, percent, batch_size):
+    """
+    Get a DataLoader for a subset of the dataset.
+    """
     subset_size = int(len(dataset) * percent)
     subset_indices = torch.randperm(len(dataset))[:subset_size]
     subset = torch.utils.data.Subset(dataset, subset_indices)
     return DataLoader(subset, batch_size=batch_size, shuffle=True)
 
-
-
-
-
+# Function to plot pruning metrics and FLOPs
 def plot_pruning_metrics_separate_flops(model_dir):
+    """
+    Plot the pruning metrics and FLOPs for different sparsity levels.
+    """
     summary_path = os.path.join(model_dir, "pruning_summary.json")
     if not os.path.exists(summary_path):
         raise FileNotFoundError(f"Cannot find pruning summary at: {summary_path}")
@@ -267,9 +296,10 @@ def plot_pruning_metrics_separate_flops(model_dir):
     plt.tight_layout()
     plt.show()
 
-
-    
 def main(opts):
+    """
+    Main function to load data, train, prune, and evaluate the model.
+    """
     data = pd.read_csv(opts.DataDir)
     model_dir =opts.ModelDir
 
@@ -452,11 +482,9 @@ def main(opts):
     
     print(f"Saved baseline model info to {save_path}")
     
-    
     # Pruning and fine-tuning loop
     prune_levels = [0.3,0.5, 0.6, 0.8, 0.9,0.95,0.99]
     results = {"baseline": {"metrics": baseline_metrics, "params": baseline_params, "flops": baseline_flops}}
-    
     
     for level in prune_levels:
         print(f"\n=== Pruning with {int(level * 100)}% sparsity ===")
@@ -500,7 +528,7 @@ def main(opts):
             criterion=criterion, scheduler=ft_scheduler, device=device
         )
     
-        # Evaluate fine-tuned model
+        # Evaluate fine-tuned pruned model
         print("Evaluating fine-tuned pruned model...")
         torch.save(ft_model.state_dict(), os.path.join(eval_path, "model_finetuned.pth"))
         log_file_ft = os.path.join(eval_path, "eval_log_finetuned.txt")
@@ -534,19 +562,21 @@ def main(opts):
     print(f"Saved pruning summary to: {os.path.join(model_dir, 'pruning_summary.json')}")
     plot_pruning_metrics_separate_flops(model_dir)
 
-
-
-
 def parseArgs(argv):
+    """
+    Parse command-line arguments for the script.
+    """
     parser = argparse.ArgumentParser(description="Parse command-line arguments for malware analysis.")
     parser.add_argument('-md', '--ModelDir', type=str, required=True, help='Path to ModelDir')
     parser.add_argument('-da', '--DataDir', type=str, required=True, help='Path toDataDir')
 
     opts = parser.parse_args(argv)
 
-    
     return opts
+
 if __name__ == '__main__':
     opts = parseArgs(sys.argv[1:])
     print(opts)
     main(opts)
+
+# Warning: Please note that some of the datasets used in this project may contain harmful content. It is important to handle these datasets with care and be aware of the potential risks associated with working with such content.
