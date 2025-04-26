@@ -1,2 +1,7 @@
 pandas
 datasets
+torch
+transformers
+scikit-learn
+matplotlib
+tqdm
